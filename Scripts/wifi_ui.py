@@ -203,7 +203,11 @@ class MonitorWindow:
     def start_monitoring(self):
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-                script_content = MONITOR_SCRIPT.replace("${WIFI_IFACE}", self.wifi_iface).replace("$ESSID", self.essid)
+                script_content = (MONITOR_SCRIPT
+                    .replace("${WIFI_IFACE}", self.wifi_iface)
+                    .replace("$WIFI_IFACE", self.wifi_iface)
+                    .replace("${ESSID:-<not set>}", self.essid)
+                    .replace("$ESSID", self.essid))
                 f.write(script_content)
                 script_path = f.name
 
