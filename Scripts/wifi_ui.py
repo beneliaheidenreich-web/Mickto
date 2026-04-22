@@ -14,15 +14,15 @@ import re
 # =========================
 # Config
 # =========================
-APP_BG = "#0f172a"
-CARD_BG = "#1e293b"
-CARD_BG_SELECTED = "#334155"
-TEXT = "#f8fafc"
-MUTED = "#94a3b8"
-ACCENT = "#38bdf8"
-SUCCESS = "#22c55e"
-DANGER = "#ef4444"
-BORDER = "#475569"
+APP_BG           = "#000000"
+CARD_BG          = "#0d0d0d"
+CARD_BG_SELECTED = "#1a1a1a"
+TEXT             = "#d4d4d4"
+MUTED            = "#4a4a4a"
+ACCENT           = "#00ff41"
+SUCCESS          = "#00cc44"
+DANGER           = "#cc2200"
+BORDER           = "#1f1f1f"
 
 WIFI_IFACE = "wlan1"
 AUTO_RESCAN_MS = 15000
@@ -98,7 +98,7 @@ class MonitorWindow:
         self.window.geometry("370x210")
         self.window.minsize(370, 210)
         self.window.maxsize(370, 210)
-        self.window.configure(bg="#1e1e1e")
+        self.window.configure(bg="#000000")
 
         # Grid layout so the text box expands but buttons stay visible
         self.window.grid_rowconfigure(1, weight=1)
@@ -109,8 +109,8 @@ class MonitorWindow:
             self.window,
             text=f"Monitoring: {self._short_ssid(net['ssid'])}",
             font=("Arial", 8, "bold"),
-            bg="#1e1e1e",
-            fg="white",
+            bg="#000000",
+            fg="#d4d4d4",
             anchor="w"
         )
         self.header_label.grid(row=0, column=0, sticky="ew", padx=4, pady=(3, 1))
@@ -129,7 +129,7 @@ class MonitorWindow:
         self.output_text.grid(row=1, column=0, sticky="nsew", padx=4, pady=2)
 
         # Bottom controls
-        self.btn_frame = tk.Frame(self.window, bg="#1e1e1e")
+        self.btn_frame = tk.Frame(self.window, bg="#000000")
         self.btn_frame.grid(row=2, column=0, sticky="ew", padx=4, pady=(1, 4))
         self.btn_frame.grid_columnconfigure(0, weight=1)
         self.btn_frame.grid_columnconfigure(1, weight=1)
@@ -138,8 +138,8 @@ class MonitorWindow:
             self.btn_frame,
             text="Deauth",
             command=self.send_deauth,
-            bg="#ff4444",
-            fg="white",
+            bg="#cc2200",
+            fg="#d4d4d4",
             font=("Arial", 8, "bold"),
             width=12,
             height=1
@@ -150,8 +150,8 @@ class MonitorWindow:
             self.btn_frame,
             text="Stop",
             command=self.stop_monitoring,
-            bg="#4444ff",
-            fg="white",
+            bg="#0033aa",
+            fg="#d4d4d4",
             font=("Arial", 8, "bold"),
             width=12,
             height=1
@@ -162,8 +162,8 @@ class MonitorWindow:
             self.btn_frame,
             text="Crack (waiting for handshake...)",
             command=self.start_crack,
-            bg="#334155",
-            fg="#64748b",
+            bg="#111111",
+            fg="#4a4a4a",
             font=("Arial", 7, "bold"),
             height=1,
             state="disabled"
@@ -303,8 +303,8 @@ class MonitorWindow:
         self.crack_btn.config(
             text="Crack handshake",
             state="normal",
-            bg="#f59e0b",
-            fg="#1c1917"
+            bg="#cc8800",
+            fg="#000000"
         )
 
     def start_crack(self):

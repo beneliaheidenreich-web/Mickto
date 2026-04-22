@@ -21,3 +21,12 @@ Automates WPA handshake capture and cracking.
 3. Crack captured handshakes using a wordlist
 
 If no handshake is captured, the user can broadcast deauthentication packets to all clients (`FF:FF:FF:FF:FF:FF`) to force reconnections and improve the chance of catching a handshake.
+
+### Recon
+
+Passive area reconnaissance — scans the environment and displays all results in a scrollable GUI.
+
+- **WiFi Access Points** — lists nearby networks via `wlan1`: SSID, signal strength, and security type
+- **Bluetooth Classic** — 8-second scan for discoverable classic Bluetooth devices
+- **Bluetooth LE** — 6-second BLE scan, deduplicated
+- **Network Devices** — ARP scan of the local subnet, listing IP, MAC address, and vendor

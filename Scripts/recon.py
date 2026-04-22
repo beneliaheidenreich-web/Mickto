@@ -6,13 +6,13 @@ import tkinter as tk
 from tkinter import scrolledtext
 
 # ── Colour scheme (matches wifi_ui.py) ────────────────────────────────────────
-APP_BG  = "#0f172a"
-CARD_BG = "#1e293b"
-TEXT    = "#f8fafc"
-MUTED   = "#94a3b8"
-ACCENT  = "#38bdf8"
-SUCCESS = "#22c55e"
-DANGER  = "#ef4444"
+APP_BG  = "#000000"
+CARD_BG = "#0d0d0d"
+TEXT    = "#d4d4d4"
+MUTED   = "#4a4a4a"
+ACCENT  = "#00ff41"
+SUCCESS = "#00cc44"
+DANGER  = "#cc2200"
 
 WIFI_IFACE = "wlan1"
 
