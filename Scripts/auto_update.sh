@@ -4,7 +4,7 @@
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS_DIR="$REPO_DIR/Scripts"
-DESKTOP_DIR="/root/Desktop"
+DESKTOP_DIR="$(eval echo ~${SUDO_USER:-$USER}/Desktop)"
 PYTHON="/usr/bin/python3"
 
 cd "$REPO_DIR" || exit 1

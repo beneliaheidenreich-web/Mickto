@@ -10,6 +10,29 @@
 - **GPIO** — LCD touchscreen; tap to launch scripts
 - **Power** — Battery connected via bottom GPIO pins
 
+## Setup
+
+### First-time on the Pi
+
+```bash
+# Clone the repo
+git clone https://github.com/beneliaheidenreich-web/Mickto.git ~/Mickto
+
+# Install the auto-update timer (run once)
+cd ~/Mickto
+sudo bash Scripts/setup_autoupdate.sh
+```
+
+After that, every push to `main` is picked up within 2 minutes. New scripts in `Scripts/` get a desktop launcher automatically; removed scripts lose theirs.
+
+Useful commands on the Pi:
+```bash
+sudo systemctl start mickto-update.service   # force an immediate sync
+journalctl -u mickto-update.service -n 20    # view sync log
+```
+
+---
+
 ## Scripts
 
 ### Aircrack Automation
