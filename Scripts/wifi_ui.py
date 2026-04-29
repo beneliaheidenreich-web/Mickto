@@ -63,6 +63,7 @@ if ! iw dev "$WIFI_IFACE" info | grep -q "type monitor"; then
 fi
 
 echo "Monitor mode confirmed on $WIFI_IFACE"
+trap - EXIT
 echo "READY: $WIFI_IFACE $CAPTURE_DIR"
 '''
 

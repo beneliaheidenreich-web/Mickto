@@ -19,16 +19,22 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     git pull origin main --quiet
 fi
 
-# ── Sync desktop launchers for every .py in Scripts/ ─────────────────────────
+# ── Sync desktop launchers for every .py and .sh in Scripts/ ─────────────────
 mkdir -p "$DESKTOP_DIR"
 
-for script in "$SCRIPTS_DIR"/*.py; do
+for script in "$SCRIPTS_DIR"/*.py "$SCRIPTS_DIR"/*.sh; do
     [ -f "$script" ] || continue
 
-    filename=$(basename "$script" .py)
-    # Prettify: underscores → spaces, title-case each word
+    ext="${script##*.}"
+    filename=$(basename "$script" ".$ext")
     display_name=$(echo "$filename" | sed 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2); print}')
     desktop_file="$DESKTOP_DIR/${filename}.desktop"
+
+    if [ "$ext" = "py" ]; then
+        exec_cmd="sudo $PYTHON $script"
+    else
+        exec_cmd="sudo bash $script"
+    fi
 
     cat > "$desktop_file" <<EOF
 [Desktop Entry]
@@ -36,7 +42,7 @@ Version=1.0
 Type=Application
 Name=$display_name
 Comment=Mickto — $display_name
-Exec=sudo $PYTHON $script
+Exec=$exec_cmd
 Icon=utilities-terminal
 Terminal=false
 Categories=Application;
