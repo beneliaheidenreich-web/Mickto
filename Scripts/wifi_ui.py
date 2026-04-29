@@ -32,10 +32,6 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 # ==================== MONITOR SCRIPT (as variable) ====================
 MONITOR_SCRIPT = '''#!/bin/bash
 set -uo pipefail
-cleanup() {
-    sudo systemctl start NetworkManager wpa_supplicant iwd 2>/dev/null || true
-}
-trap cleanup EXIT
 
 echo "=== Aircrack-ng Monitor Mode ==="
 echo "Interface: $WIFI_IFACE"
@@ -46,23 +42,22 @@ CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
-echo "Stopping interfering services..."
-sudo systemctl stop wpa_supplicant 2>/dev/null || true
-sudo systemctl stop NetworkManager 2>/dev/null || true
-sudo systemctl stop iwd 2>/dev/null || true
+# Unmanage wlan1 in NetworkManager so it won't reclaim the interface,
+# but leave NetworkManager running so wlan0/AP stays up.
+echo "Releasing $WIFI_IFACE from NetworkManager..."
+sudo nmcli device set "$WIFI_IFACE" managed no 2>/dev/null || true
 sudo pkill -9 wpa_supplicant 2>/dev/null || true
-sleep 2
+sleep 1
 
-echo "Putting $WIFI_IFACE into monitor mode..."
-sudo ip link set "$WIFI_IFACE" down               || { echo "ERROR: failed to bring $WIFI_IFACE down"; exit 1; }
-sudo iwconfig "$WIFI_IFACE" mode monitor          || { echo "ERROR: failed to set monitor mode"; exit 1; }
-sudo ip link set "$WIFI_IFACE" up                 || { echo "ERROR: failed to bring $WIFI_IFACE up"; exit 1; }
+echo "Starting monitor mode via airmon-ng..."
+sudo airmon-ng start "$WIFI_IFACE" 2>&1 || { echo "ERROR: airmon-ng start failed"; exit 1; }
+sleep 1
 
-MON_IFACE="$WIFI_IFACE"
-if iw dev "$WIFI_IFACE" info 2>/dev/null | grep -q "type monitor"; then
+MON_IFACE="${WIFI_IFACE}mon"
+if iw dev "$MON_IFACE" info 2>/dev/null | grep -q "type monitor"; then
     echo "Monitor mode confirmed on $MON_IFACE"
 else
-    echo "ERROR: monitor mode not active — adapter may not support RFMON"
+    echo "ERROR: monitor interface $MON_IFACE not found — adapter may not support RFMON"
     exit 1
 fi
 
@@ -426,7 +421,7 @@ class MonitorWindow:
 
         try:
             subprocess.run(
-                ["sudo", "systemctl", "restart", "NetworkManager"],
+                ["sudo", "nmcli", "device", "set", self.wifi_iface, "managed", "yes"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5
