@@ -51,13 +51,13 @@ echo "Starting monitor mode via airmon-ng..."
 sudo airmon-ng start "$WIFI_IFACE" 2>&1 || { echo "ERROR: airmon-ng start failed"; exit 1; }
 sleep 1
 
-MON_IFACE="${WIFI_IFACE}mon"
-if iw dev "$MON_IFACE" info 2>/dev/null | grep -q "type monitor"; then
-    echo "Monitor mode confirmed on $MON_IFACE"
-else
-    echo "ERROR: monitor interface $MON_IFACE not found"
+# Detect whichever interface is now in monitor mode (name varies by driver)
+MON_IFACE=$(iw dev | awk '/Interface/{iface=$2} /type monitor/{print iface; exit}')
+if [ -z "$MON_IFACE" ]; then
+    echo "ERROR: no monitor interface found after airmon-ng start"
     exit 1
 fi
+echo "Monitor mode confirmed on $MON_IFACE"
 
 echo "READY: $MON_IFACE $CAPTURE_DIR"
 '''
