@@ -50,18 +50,20 @@ echo "Stopping interfering services..."
 sudo systemctl stop wpa_supplicant 2>/dev/null || true
 sudo systemctl stop NetworkManager 2>/dev/null || true
 sudo systemctl stop iwd 2>/dev/null || true
-sleep 1
+sudo pkill -9 wpa_supplicant 2>/dev/null || true
+sleep 2
 
 echo "Putting $WIFI_IFACE into monitor mode..."
-sudo ip link set "$WIFI_IFACE" down      || { echo "ERROR: failed to bring $WIFI_IFACE down"; exit 1; }
-sudo iw dev "$WIFI_IFACE" set type monitor || { echo "ERROR: failed to set monitor mode"; exit 1; }
-sudo ip link set "$WIFI_IFACE" up        || { echo "ERROR: failed to bring $WIFI_IFACE up"; exit 1; }
+sudo ip link set "$WIFI_IFACE" down               || { echo "ERROR: failed to bring $WIFI_IFACE down"; exit 1; }
+sudo iwconfig "$WIFI_IFACE" mode monitor          || { echo "ERROR: failed to set monitor mode"; exit 1; }
+sudo ip link set "$WIFI_IFACE" up                 || { echo "ERROR: failed to bring $WIFI_IFACE up"; exit 1; }
 
 MON_IFACE="$WIFI_IFACE"
-if iwconfig 2>/dev/null | grep -q "$WIFI_IFACE.*Mode:Monitor"; then
+if iw dev "$WIFI_IFACE" info 2>/dev/null | grep -q "type monitor"; then
     echo "Monitor mode confirmed on $MON_IFACE"
 else
-    echo "Warning: could not confirm monitor mode — proceeding anyway."
+    echo "ERROR: monitor mode not active — adapter may not support RFMON"
+    exit 1
 fi
 
 echo "Starting airodump-ng on $MON_IFACE..."
