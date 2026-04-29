@@ -33,6 +33,14 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 MONITOR_SCRIPT = '''#!/bin/bash
 set -eo pipefail
 
+_repair() {
+    sudo ip link set "$WIFI_IFACE" down 2>/dev/null || true
+    sudo iw dev "$WIFI_IFACE" set type managed 2>/dev/null || true
+    sudo ip link set "$WIFI_IFACE" up 2>/dev/null || true
+    sudo nmcli device set "$WIFI_IFACE" managed yes 2>/dev/null || true
+}
+trap _repair EXIT
+
 echo "Interface: $WIFI_IFACE"
 echo "ESSID: $ESSID"
 
@@ -491,14 +499,18 @@ class WifiUI:
         seen = set()
         for line in output.splitlines():
             if not line.strip(): continue
-            parts = line.strip().split(":", 2)
+            # BSSID is always XX:XX:XX:XX:XX:XX (17 chars) with --escape no
+            if len(line) < 18:
+                continue
+            bssid = line[:17]
+            parts = line[18:].split(":", 2)
             ssid = (parts[0] or "<hidden>").strip()
-            signal = parts[1].strip() if len(parts)>1 else "0"
-            security = (parts[2] or "Open").strip() if len(parts)>2 else "Open"
-            key = (ssid, security)
+            signal = parts[1].strip() if len(parts) > 1 else "0"
+            security = (parts[2] or "Open").strip() if len(parts) > 2 else "Open"
+            key = (ssid, bssid)
             if key not in seen:
                 seen.add(key)
-                rows.append({"ssid": ssid, "signal": signal, "security": security})
+                rows.append({"bssid": bssid, "ssid": ssid, "signal": signal, "security": security})
         rows.sort(key=lambda r: int(r["signal"]) if r["signal"].isdigit() else -1, reverse=True)
         return rows
 
@@ -542,7 +554,7 @@ class WifiUI:
         self.root.after(0, lambda: self.set_status("Scanning..."))
 
         self.run_command(["nmcli", "device", "wifi", "rescan", "ifname", WIFI_IFACE])
-        result = self.run_command(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", WIFI_IFACE])
+        result = self.run_command(["nmcli", "-t", "-e", "no", "-f", "BSSID,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", WIFI_IFACE])
 
         if result.returncode != 0:
             self.root.after(0, lambda: self._scan_failed())
