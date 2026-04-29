@@ -80,10 +80,10 @@ exec sudo airodump-ng -w capture --essid "$ESSID" "$MON_IFACE"
 
 # ==================== NEW MONITORING WINDOW ====================
 class MonitorWindow:
-    def __init__(self, parent, net, wifi_iface="wlan1"):
+    def __init__(self, parent, net):
         self.parent = parent
         self.net = net
-        self.wifi_iface = wifi_iface
+        self.wifi_iface = WIFI_IFACE
         self.process = None
         self.deauth_process = None
         self.crack_process = None
@@ -427,8 +427,6 @@ class MonitorWindow:
                 )
             except Exception:
                 pass
-        except Exception:
-            pass
 
         try:
             subprocess.run(
@@ -647,8 +645,7 @@ class WifiUI:
     def on_network_selected(self, net):
         self.set_status(f"Starting monitor for {net['ssid']}...")
         try:
-            # Open the new integrated monitoring window (no external xterm)
-            MonitorWindow(self.root, net, wifi_iface="wlan1")   # change "wlan1" if needed
+            MonitorWindow(self.root, net)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
