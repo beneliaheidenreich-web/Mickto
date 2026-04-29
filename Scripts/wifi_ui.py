@@ -31,42 +31,37 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 
 # ==================== MONITOR SCRIPT (as variable) ====================
 MONITOR_SCRIPT = '''#!/bin/bash
-set -euo pipefail
+set -uo pipefail
 cleanup() {
     sudo systemctl start NetworkManager wpa_supplicant iwd 2>/dev/null || true
 }
 trap cleanup EXIT
+
 echo "=== Aircrack-ng Monitor Mode ==="
 echo "Interface: $WIFI_IFACE"
 echo "ESSID: ${ESSID:-<not set>}"
 
-# Create captures folder with timestamped subfolder
 mkdir -p captures
 CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
-MON_IFACE="${WIFI_IFACE}"
-
-echo "Putting $WIFI_IFACE into monitor mode..."
-
-# Manual monitor mode setup - does NOT run airmon-ng check kill
-sudo ip link set "$WIFI_IFACE" down
-sudo iw dev "$WIFI_IFACE" set type monitor
-sudo ip link set "$WIFI_IFACE" up
-
+echo "Stopping interfering services..."
 sudo systemctl stop wpa_supplicant 2>/dev/null || true
 sudo systemctl stop NetworkManager 2>/dev/null || true
 sudo systemctl stop iwd 2>/dev/null || true
+sleep 1
 
-# Some drivers create <iface>mon, others reuse the original name
-if iwconfig 2>/dev/null | grep -q "$MON_IFACE"; then
-    echo "Monitor interface created: $MON_IFACE"
-elif iwconfig 2>/dev/null | grep -q "$WIFI_IFACE.*Mode:Monitor"; then
-    echo "Monitor mode enabled directly on $WIFI_IFACE"
-    MON_IFACE="$WIFI_IFACE"
+echo "Putting $WIFI_IFACE into monitor mode..."
+sudo ip link set "$WIFI_IFACE" down      || { echo "ERROR: failed to bring $WIFI_IFACE down"; exit 1; }
+sudo iw dev "$WIFI_IFACE" set type monitor || { echo "ERROR: failed to set monitor mode"; exit 1; }
+sudo ip link set "$WIFI_IFACE" up        || { echo "ERROR: failed to bring $WIFI_IFACE up"; exit 1; }
+
+MON_IFACE="$WIFI_IFACE"
+if iwconfig 2>/dev/null | grep -q "$WIFI_IFACE.*Mode:Monitor"; then
+    echo "Monitor mode confirmed on $MON_IFACE"
 else
-    echo "Warning: Could not confirm monitor mode. Check with 'iwconfig'."
+    echo "Warning: could not confirm monitor mode — proceeding anyway."
 fi
 
 echo "Starting airodump-ng on $MON_IFACE..."
@@ -74,7 +69,6 @@ echo "→ A WPA handshake will be shown in the top right when captured."
 echo "Press the 'Stop Monitoring' button in the GUI to stop."
 
 cd "$CAPTURE_DIR" || exit 1
-
 exec sudo airodump-ng -w capture --essid "$ESSID" "$MON_IFACE"
 '''
 
