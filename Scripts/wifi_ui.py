@@ -46,7 +46,7 @@ CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
-MON_IFACE="${WIFI_IFACE}mon"
+MON_IFACE="${WIFI_IFACE}"
 
 echo "Putting $WIFI_IFACE into monitor mode..."
 
