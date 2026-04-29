@@ -31,11 +31,10 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 
 # ==================== MONITOR SCRIPT (as variable) ====================
 MONITOR_SCRIPT = '''#!/bin/bash
-set -uo pipefail
+set -eo pipefail
 
-echo "=== Aircrack-ng Monitor Mode ==="
 echo "Interface: $WIFI_IFACE"
-echo "ESSID: ${ESSID:-<not set>}"
+echo "ESSID: $ESSID"
 
 mkdir -p captures
 CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
@@ -43,23 +42,20 @@ mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
 echo "Releasing $WIFI_IFACE from NetworkManager..."
-sudo nmcli device set "$WIFI_IFACE" managed no 2>/dev/null || true
-sudo pkill -9 wpa_supplicant 2>/dev/null || true
-sleep 1
+sudo nmcli device set "$WIFI_IFACE" managed no
 
-echo "Starting monitor mode via airmon-ng..."
-sudo airmon-ng start "$WIFI_IFACE" 2>&1 || { echo "ERROR: airmon-ng start failed"; exit 1; }
-sleep 1
+echo "Setting monitor mode..."
+sudo ip link set "$WIFI_IFACE" down
+sudo iw dev "$WIFI_IFACE" set type monitor
+sudo ip link set "$WIFI_IFACE" up
 
-# Detect whichever interface is now in monitor mode (name varies by driver)
-MON_IFACE=$(iw dev | awk '/Interface/{iface=$2} /type monitor/{print iface; exit}')
-if [ -z "$MON_IFACE" ]; then
-    echo "ERROR: no monitor interface found after airmon-ng start"
+if ! iw dev "$WIFI_IFACE" info | grep -q "type monitor"; then
+    echo "ERROR: monitor mode failed — adapter may not support RFMON"
     exit 1
 fi
-echo "Monitor mode confirmed on $MON_IFACE"
 
-echo "READY: $MON_IFACE $CAPTURE_DIR"
+echo "Monitor mode confirmed on $WIFI_IFACE"
+echo "READY: $WIFI_IFACE $CAPTURE_DIR"
 '''
 
 # ==================== NEW MONITORING WINDOW ====================
@@ -68,7 +64,7 @@ class MonitorWindow:
         self.parent = parent
         self.net = net
         self.wifi_iface = WIFI_IFACE
-        self.mon_iface = f"{WIFI_IFACE}mon"
+        self.mon_iface = WIFI_IFACE
         self.process = None
         self.deauth_process = None
         self.crack_process = None
@@ -383,67 +379,16 @@ class MonitorWindow:
             except Exception:
                 pass
 
-        try:
-            mon_iface = self.mon_iface
-
-            print(f"Stopping monitor mode on {mon_iface}...")
-
-            # Use manual cleanup instead of airmon-ng stop (much safer with hostapd)
-            subprocess.run(
-                ["sudo", "ip", "link", "set", self.wifi_iface, "down"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5
-            )
-
-            subprocess.run(
-                ["sudo", "iw", "dev", self.wifi_iface, "set", "type", "managed"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5
-            )
-
-            subprocess.run(
-                ["sudo", "ip", "link", "set", self.wifi_iface, "up"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5
-            )
-
-            # Also try to remove the monitor interface if it still exists
-            subprocess.run(
-                ["sudo", "ip", "link", "delete", mon_iface],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=3
-            )
-
-            print(f"Successfully restored {self.wifi_iface} to managed mode.")
-
-        except subprocess.TimeoutExpired:
-            print(f"Warning: Timeout while stopping monitor mode on {self.wifi_iface}")
-        except Exception as e:
-            print(f"Warning: Failed to stop monitor mode cleanly: {e}")
-            # Fallback: try original airmon-ng stop (less safe)
+        for cmd in [
+            ["sudo", "ip", "link", "set", self.wifi_iface, "down"],
+            ["sudo", "iw", "dev", self.wifi_iface, "set", "type", "managed"],
+            ["sudo", "ip", "link", "set", self.wifi_iface, "up"],
+            ["sudo", "nmcli", "device", "set", self.wifi_iface, "managed", "yes"],
+        ]:
             try:
-                subprocess.run(
-                    ["sudo", "airmon-ng", "stop", mon_iface],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=5
-                )
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
             except Exception:
                 pass
-
-        try:
-            subprocess.run(
-                ["sudo", "nmcli", "device", "set", self.wifi_iface, "managed", "yes"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5
-            )
-        except Exception:
-            pass
 
         try:
             self.window.destroy()
