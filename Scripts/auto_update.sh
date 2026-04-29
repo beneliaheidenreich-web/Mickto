@@ -10,7 +10,7 @@ PYTHON="/usr/bin/python3"
 cd "$REPO_DIR" || exit 1
 
 # ── Pull if there are upstream changes ────────────────────────────────────────
-git fetch origin main --quiet 2>/dev/null || exit 0   # no internet — bail silently
+git fetch origin --quiet 2>/dev/null || exit 0   # no internet — bail silently
 
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/main)

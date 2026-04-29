@@ -21,6 +21,7 @@ Description=Mickto — pull latest scripts from git
 
 [Service]
 Type=oneshot
+User=kali
 ExecStart=/bin/bash $SYNC_SCRIPT
 WorkingDirectory=$REPO_DIR
 StandardOutput=journal
