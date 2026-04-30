@@ -235,19 +235,32 @@ class MonitorWindow:
             if not self.running:
                 return
 
-            # Phase 2: airodump-ng is a curses app — launch it with no stdout capture
+            # Phase 2: airodump-ng is a curses app — log stderr so errors are visible
             cap_path = os.path.join(self.capture_dir, "capture")
-            self.process = subprocess.Popen(
-                ["sudo", "airodump-ng", "-w", cap_path, "--essid", self.essid, self.mon_iface],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid,
-            )
+            log_path = os.path.join(self.capture_dir, "airodump.log")
+            self.append_output(f"\nStarting airodump-ng on {self.mon_iface}...\n")
+            self.append_output(f"Log: {log_path}\n")
 
-            self.append_output(f"\nairodump-ng running on {self.mon_iface}.\n")
+            with open(log_path, "w") as log_f:
+                self.process = subprocess.Popen(
+                    ["sudo", "airodump-ng", "-w", cap_path, "--essid", self.essid, self.mon_iface],
+                    stdout=log_f,
+                    stderr=log_f,
+                    preexec_fn=os.setsid,
+                )
+
             self.append_output("Waiting for WPA handshake...\n")
-
             self.process.wait()
+
+            # If airodump exited early, show the log
+            if self.running:
+                try:
+                    with open(log_path) as log_f:
+                        tail = log_f.read()[-800:]
+                    if tail.strip():
+                        self.append_output(f"\nairodump-ng exited. Log:\n{tail}\n")
+                except Exception:
+                    pass
 
         except Exception as e:
             self.append_output(f"\nError: {e}\n")
