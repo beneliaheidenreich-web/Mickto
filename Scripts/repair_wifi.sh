@@ -13,7 +13,7 @@ sleep 1
 
 MON_IFACE=$(iw dev 2>/dev/null | awk '/Interface/{i=$2} /type monitor/{print i; exit}')
 if [ -n "$MON_IFACE" ]; then
-    echo "Stopping monitor interface $MON_IFACE..."
+    echo "Stopping monitor interface $MON_IFACE via airmon-ng..."
     sudo airmon-ng stop "$MON_IFACE" 2>/dev/null || true
 else
     echo "No monitor interface found."
