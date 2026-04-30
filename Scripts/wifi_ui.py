@@ -9,6 +9,7 @@ import time
 import queue
 import glob
 import re
+import atexit
 
 
 # =========================
@@ -33,36 +34,34 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 MONITOR_SCRIPT = '''#!/bin/bash
 set -eo pipefail
 
-MON_IFACE="${WIFI_IFACE}mon"
+IFACE="${WIFI_IFACE}"
+MON_IFACE="${IFACE}mon"
 
-_repair() {
-    sudo iw dev "$MON_IFACE" del 2>/dev/null || true
+_restore_on_error() {
+    sudo airmon-ng stop "$MON_IFACE" 2>/dev/null || true
+    sudo systemctl start hostapd 2>/dev/null || true
+    sudo systemctl start NetworkManager 2>/dev/null || true
 }
-trap _repair EXIT
+trap _restore_on_error ERR
 
-echo "Interface: $WIFI_IFACE"
-echo "ESSID: $ESSID"
+echo "Killing interfering processes..."
+sudo airmon-ng check kill
 
-mkdir -p captures
-CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$CAPTURE_DIR"
-echo "Captures will be saved in: $CAPTURE_DIR/"
+echo "Starting monitor mode on $IFACE..."
+sudo airmon-ng start "$IFACE"
 
-PHY=$(iw dev "$WIFI_IFACE" info | awk '/wiphy/{print "phy" $2}')
-echo "PHY: $PHY"
-
-sudo iw dev "$MON_IFACE" del 2>/dev/null || true
-echo "Creating monitor interface $MON_IFACE on $PHY..."
-sudo iw phy "$PHY" interface add "$MON_IFACE" type monitor
-sudo ip link set "$MON_IFACE" up
-
-if ! iw dev "$MON_IFACE" info | grep -q "type monitor"; then
+if ! iw dev "$MON_IFACE" info 2>/dev/null | grep -q "type monitor"; then
     echo "ERROR: monitor interface $MON_IFACE not confirmed"
     exit 1
 fi
 
 echo "Monitor mode confirmed on $MON_IFACE"
-trap - EXIT
+trap - ERR
+
+mkdir -p captures
+CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$CAPTURE_DIR"
+echo "Captures will be saved in: $CAPTURE_DIR/"
 echo "READY: $MON_IFACE $CAPTURE_DIR"
 '''
 
@@ -72,7 +71,7 @@ class MonitorWindow:
         self.parent = parent
         self.net = net
         self.wifi_iface = WIFI_IFACE
-        self.mon_iface = WIFI_IFACE
+        self.mon_iface = WIFI_IFACE + "mon"
         self.process = None
         self.deauth_process = None
         self.crack_process = None
@@ -81,6 +80,7 @@ class MonitorWindow:
         self.essid = net['ssid']
         self.capture_dir = None
         self.launch_cwd = os.getcwd()
+        self._restored = False
 
         self.window = tk.Toplevel(parent)
         self.window.title(f"Monitoring: {net['ssid']}")
@@ -174,6 +174,20 @@ class MonitorWindow:
         ssid = str(ssid)
         return ssid if len(ssid) <= max_len else ssid[:max_len - 3] + "..."
 
+    def _restore_interfaces(self):
+        if self._restored:
+            return
+        self._restored = True
+        for cmd in [
+            ["sudo", "airmon-ng", "stop", self.mon_iface],
+            ["sudo", "systemctl", "start", "hostapd"],
+            ["sudo", "systemctl", "start", "NetworkManager"],
+        ]:
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            except Exception:
+                pass
+
     def append_output(self, text):
         self.log_queue.put(text)
 
@@ -190,6 +204,7 @@ class MonitorWindow:
             self.window.after(100, self.process_log_queue)
 
     def start_monitoring(self):
+        atexit.register(self._restore_interfaces)
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
                 script_content = (MONITOR_SCRIPT
@@ -400,13 +415,7 @@ class MonitorWindow:
             except Exception:
                 pass
 
-        try:
-            subprocess.run(
-                ["sudo", "iw", "dev", self.mon_iface, "del"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-        except Exception:
-            pass
+        self._restore_interfaces()
 
         try:
             self.window.destroy()
