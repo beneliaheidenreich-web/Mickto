@@ -36,7 +36,6 @@ set -eo pipefail
 _repair() {
     sudo ip link set "$WIFI_IFACE" down 2>/dev/null || true
     sudo iw dev "$WIFI_IFACE" set type managed 2>/dev/null || true
-    sudo ip link set "$WIFI_IFACE" up 2>/dev/null || true
     sudo nmcli device set "$WIFI_IFACE" managed yes 2>/dev/null || true
 }
 trap _repair EXIT
@@ -55,7 +54,6 @@ sudo nmcli device set "$WIFI_IFACE" managed no
 echo "Setting monitor mode..."
 sudo ip link set "$WIFI_IFACE" down
 sudo iw dev "$WIFI_IFACE" set type monitor
-sudo ip link set "$WIFI_IFACE" up
 
 if ! iw dev "$WIFI_IFACE" info | grep -q "type monitor"; then
     echo "ERROR: monitor mode failed — adapter may not support RFMON"

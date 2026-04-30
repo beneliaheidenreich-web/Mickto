@@ -27,6 +27,11 @@ for script in "$SCRIPTS_DIR"/*.py "$SCRIPTS_DIR"/*.sh; do
 
     ext="${script##*.}"
     filename=$(basename "$script" ".$ext")
+
+    # Skip internal/setup scripts
+    case "$filename" in
+        setup_autoupdate|auto_update) continue ;;
+    esac
     display_name=$(echo "$filename" | sed 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2); print}')
     desktop_file="$DESKTOP_DIR/${filename}.desktop"
 
