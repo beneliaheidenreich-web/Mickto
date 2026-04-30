@@ -52,6 +52,10 @@ trap _restore_on_error ERR
 echo "Killing interfering processes..."
 sudo airmon-ng check kill
 
+echo "Resetting $IFACE to clear any association..."
+sudo ip link set "$IFACE" down
+sudo ip link set "$IFACE" up
+
 echo "Starting monitor mode on $IFACE..."
 sudo airmon-ng start "$IFACE"
 
