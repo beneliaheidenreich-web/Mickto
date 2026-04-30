@@ -35,10 +35,15 @@ MONITOR_SCRIPT = '''#!/bin/bash
 set -eo pipefail
 
 IFACE="${WIFI_IFACE}"
-MON_IFACE="${IFACE}mon"
+
+_find_monitor() {
+    iw dev 2>/dev/null | awk '/Interface/{i=$2} /type monitor/{print i; exit}'
+}
 
 _restore_on_error() {
-    sudo airmon-ng stop "$MON_IFACE" 2>/dev/null || true
+    local mon
+    mon=$(_find_monitor)
+    [ -n "$mon" ] && sudo airmon-ng stop "$mon" 2>/dev/null || true
     sudo systemctl start hostapd 2>/dev/null || true
     sudo systemctl start NetworkManager 2>/dev/null || true
 }
@@ -50,8 +55,9 @@ sudo airmon-ng check kill
 echo "Starting monitor mode on $IFACE..."
 sudo airmon-ng start "$IFACE"
 
-if ! iw dev "$MON_IFACE" info 2>/dev/null | grep -q "type monitor"; then
-    echo "ERROR: monitor interface $MON_IFACE not confirmed"
+MON_IFACE=$(_find_monitor)
+if [ -z "$MON_IFACE" ]; then
+    echo "ERROR: no monitor interface found after airmon-ng start"
     exit 1
 fi
 
@@ -71,7 +77,7 @@ class MonitorWindow:
         self.parent = parent
         self.net = net
         self.wifi_iface = WIFI_IFACE
-        self.mon_iface = WIFI_IFACE + "mon"
+        self.mon_iface = WIFI_IFACE
         self.process = None
         self.deauth_process = None
         self.crack_process = None
