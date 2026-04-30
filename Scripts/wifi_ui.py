@@ -33,10 +33,10 @@ WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 MONITOR_SCRIPT = '''#!/bin/bash
 set -eo pipefail
 
+MON_IFACE="${WIFI_IFACE}mon"
+
 _repair() {
-    sudo ip link set "$WIFI_IFACE" down 2>/dev/null || true
-    sudo iw dev "$WIFI_IFACE" set type managed 2>/dev/null || true
-    sudo nmcli device set "$WIFI_IFACE" managed yes 2>/dev/null || true
+    sudo iw dev "$MON_IFACE" del 2>/dev/null || true
 }
 trap _repair EXIT
 
@@ -48,21 +48,22 @@ CAPTURE_DIR="captures/capture_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$CAPTURE_DIR"
 echo "Captures will be saved in: $CAPTURE_DIR/"
 
-echo "Releasing $WIFI_IFACE from NetworkManager..."
-sudo nmcli device set "$WIFI_IFACE" managed no
+PHY=$(iw dev "$WIFI_IFACE" info | awk '/wiphy/{print "phy" $2}')
+echo "PHY: $PHY"
 
-echo "Setting monitor mode..."
-sudo ip link set "$WIFI_IFACE" down
-sudo iw dev "$WIFI_IFACE" set type monitor
+sudo iw dev "$MON_IFACE" del 2>/dev/null || true
+echo "Creating monitor interface $MON_IFACE on $PHY..."
+sudo iw phy "$PHY" interface add "$MON_IFACE" type monitor
+sudo ip link set "$MON_IFACE" up
 
-if ! iw dev "$WIFI_IFACE" info | grep -q "type monitor"; then
-    echo "ERROR: monitor mode failed — adapter may not support RFMON"
+if ! iw dev "$MON_IFACE" info | grep -q "type monitor"; then
+    echo "ERROR: monitor interface $MON_IFACE not confirmed"
     exit 1
 fi
 
-echo "Monitor mode confirmed on $WIFI_IFACE"
+echo "Monitor mode confirmed on $MON_IFACE"
 trap - EXIT
-echo "READY: $WIFI_IFACE $CAPTURE_DIR"
+echo "READY: $MON_IFACE $CAPTURE_DIR"
 '''
 
 # ==================== NEW MONITORING WINDOW ====================
@@ -399,16 +400,13 @@ class MonitorWindow:
             except Exception:
                 pass
 
-        for cmd in [
-            ["sudo", "ip", "link", "set", self.wifi_iface, "down"],
-            ["sudo", "iw", "dev", self.wifi_iface, "set", "type", "managed"],
-            ["sudo", "ip", "link", "set", self.wifi_iface, "up"],
-            ["sudo", "nmcli", "device", "set", self.wifi_iface, "managed", "yes"],
-        ]:
-            try:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-            except Exception:
-                pass
+        try:
+            subprocess.run(
+                ["sudo", "iw", "dev", self.mon_iface, "del"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+            )
+        except Exception:
+            pass
 
         try:
             self.window.destroy()
