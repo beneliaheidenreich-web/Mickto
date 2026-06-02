@@ -278,8 +278,8 @@ class MonitorWindow:
 
             self.process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 preexec_fn=os.setsid,
             )
@@ -392,7 +392,7 @@ class MonitorWindow:
 
     def _stream_airodump_stderr(self):
         try:
-            for line in iter(self.process.stderr.readline, ""):
+            for line in iter(self.process.stdout.readline, ""):
                 if line.strip():
                     self.append_output(f"[airodump] {line}")
         except Exception:
