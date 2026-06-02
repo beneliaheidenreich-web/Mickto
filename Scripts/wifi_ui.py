@@ -268,18 +268,18 @@ class MonitorWindow:
             self.append_output(f"\nStarting airodump-ng on {self.mon_iface}"
                                f"{' ch' + channel if channel else ''}...\n")
 
+            channel = channel or "1"
             cmd = ["sudo", "airodump-ng", "--ignore-negative-one",
-                   "-w", cap_path, "--essid", self.essid]
+                   "-w", cap_path, "--essid", self.essid,
+                   "-c", channel]
             if bssid:
                 cmd += ["-b", bssid]
-            if channel:
-                cmd += ["-c", channel]
             cmd.append(self.mon_iface)
 
             self.process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
                 preexec_fn=os.setsid,
             )
@@ -392,7 +392,7 @@ class MonitorWindow:
 
     def _stream_airodump_stderr(self):
         try:
-            for line in iter(self.process.stdout.readline, ""):
+            for line in iter(self.process.stderr.readline, ""):
                 if line.strip():
                     self.append_output(f"[airodump] {line}")
         except Exception:
