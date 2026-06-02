@@ -45,6 +45,7 @@ _restore_on_error() {
     mon=$(_find_monitor)
     [ -n "$mon" ] && sudo airmon-ng stop "$mon" 2>/dev/null || true
     sudo systemctl start hostapd 2>/dev/null || true
+    sudo systemctl start wlan0-static 2>/dev/null || true
     sudo systemctl start NetworkManager 2>/dev/null || true
 }
 trap _restore_on_error ERR
@@ -191,6 +192,7 @@ class MonitorWindow:
         for cmd in [
             ["sudo", "airmon-ng", "stop", self.mon_iface],
             ["sudo", "systemctl", "start", "hostapd"],
+            ["sudo", "systemctl", "start", "wlan0-static"],
             ["sudo", "systemctl", "start", "NetworkManager"],
         ]:
             try:
