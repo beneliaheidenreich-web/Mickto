@@ -357,18 +357,25 @@ class MonitorWindow:
         if self.capture_dir:
             cap_files = glob.glob(os.path.join(self.capture_dir, "*.cap"))
             if cap_files:
-                bssid = self.net.get("bssid", "")
-                cmd = ["aircrack-ng"]
-                if bssid:
-                    cmd += ["-b", bssid]
-                cmd.append(cap_files[0])
+                bssid = self.net.get("bssid", "").lower()
+                # Run aircrack-ng WITHOUT -b: the "(N handshake)" marker only shows
+                # up in the target-selection table, and passing -b makes most
+                # versions skip that table and jump to "specify a dictionary",
+                # so the marker never prints. Feed a newline on stdin so a
+                # multi-network capture can't block on the target prompt.
                 try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                    if re.search(r"\([1-9]\d* handshake", result.stdout):
-                        self.window.after(0, self._enable_crack_btn)
-                        return
+                    result = subprocess.run(
+                        ["aircrack-ng", cap_files[0]],
+                        capture_output=True, text=True, timeout=15, input="\n",
+                    )
                 except Exception:
-                    pass
+                    result = None
+                if result is not None:
+                    for line in result.stdout.splitlines():
+                        if re.search(r"\([1-9]\d*\s+handshake", line) and \
+                                (not bssid or bssid in line.lower()):
+                            self.window.after(0, self._enable_crack_btn)
+                            return
         self.window.after(5000, self._poll_for_handshake)
 
     def _enable_crack_btn(self):
