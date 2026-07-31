@@ -30,6 +30,19 @@ AUTO_RESCAN_MS = 15000
 WIFI_ESSID = ""
 WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
 
+
+def band_from_channel(channel):
+    """Map a Wi-Fi channel number to its frequency band label (2.4 / 5 GHz)."""
+    try:
+        ch = int(str(channel).strip())
+    except (ValueError, TypeError):
+        return ""
+    if 1 <= ch <= 14:
+        return "2.4 GHz"
+    if 32 <= ch <= 196:
+        return "5 GHz"
+    return ""
+
 # ==================== MONITOR SCRIPT (as variable) ====================
 MONITOR_SCRIPT = '''#!/bin/bash
 set -eo pipefail
@@ -575,7 +588,8 @@ class WifiUI:
             key = (ssid, bssid)
             if key not in seen:
                 seen.add(key)
-                rows.append({"bssid": bssid, "ssid": ssid, "signal": signal, "security": security, "channel": channel})
+                rows.append({"bssid": bssid, "ssid": ssid, "signal": signal, "security": security,
+                             "channel": channel, "band": band_from_channel(channel)})
         rows.sort(key=lambda r: int(r["signal"]) if r["signal"].isdigit() else -1, reverse=True)
         return rows
 
@@ -670,6 +684,10 @@ class WifiUI:
 
         tk.Label(row, text=net["ssid"], font=("Arial", 13, "bold"), bg=bg, fg=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
         tk.Label(row, text=f"{net['signal']}%", font=("Arial", 12, "bold"), bg=bg, fg=SUCCESS).pack(side="right")
+        band = net.get("band", "")
+        if band:
+            band_fg = ACCENT if band.startswith("5") else "#8a8a8a"
+            tk.Label(row, text=band, font=("Arial", 10, "bold"), bg=bg, fg=band_fg).pack(side="right", padx=(0, 8))
 
     def on_network_selected(self, net):
         self.set_status(f"Starting monitor for {net['ssid']}...")
