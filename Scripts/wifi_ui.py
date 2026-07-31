@@ -53,6 +53,35 @@ trap _restore_on_error ERR
 echo "Killing interfering processes..."
 sudo airmon-ng check kill
 
+# The Realtek 8812AU/8821AU driver can only switch managed->monitor cleanly once
+# per module load; a second airmon-ng start fails with "Operation not supported
+# (-95)" because iw/airmon-ng cannot reset the driver's internal state. Reloading
+# the kernel module gives a pristine driver every run, exactly like a fresh boot.
+echo "Reloading Realtek driver for a clean monitor state..."
+DRV_MODULE=$(basename "$(readlink -f "/sys/class/net/$IFACE/device/driver/module" 2>/dev/null)" 2>/dev/null)
+case "$DRV_MODULE" in
+    ""|"."|"/")
+        DRV_MODULE=""
+        for m in 88XXau 8812au 8821au rtl88xxau rtl8812au; do
+            if lsmod | grep -q "^$m "; then DRV_MODULE="$m"; break; fi
+        done
+        ;;
+esac
+
+if [ -n "$DRV_MODULE" ]; then
+    echo "Reloading module: $DRV_MODULE"
+    sudo modprobe -r "$DRV_MODULE" 2>/dev/null || true
+    sleep 1
+    sudo modprobe "$DRV_MODULE" 2>/dev/null || true
+    # Wait (up to ~10s) for the interface to re-enumerate after the reload
+    for _ in $(seq 1 10); do
+        ip link show "$IFACE" >/dev/null 2>&1 && break
+        sleep 1
+    done
+else
+    echo "WARNING: could not determine Realtek driver module; skipping reload."
+fi
+
 echo "Cleaning up any leftover monitor interface..."
 LEFTOVER=$(_find_monitor)
 [ -n "$LEFTOVER" ] && sudo airmon-ng stop "$LEFTOVER" 2>/dev/null || true
